@@ -1,5 +1,10 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.cleaning import CleaningRecord, CleaningType
 
 
 async def setup_checkin_data(client: AsyncClient, headers: dict):
@@ -81,3 +86,24 @@ async def test_cannot_checkin_unavailable_room(client: AsyncClient, admin_header
         "room_id": room_id,
     })
     assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_check_out_creates_cleaning_record(client: AsyncClient, db_session: AsyncSession, admin_headers):
+    guest_id, type_id, room_id, reservation_id = await setup_checkin_data(client, admin_headers)
+
+    # Check in first
+    await client.post(f"/api/reservations/{reservation_id}/check-in", headers=admin_headers, json={
+        "room_id": room_id,
+    })
+
+    # Check out
+    res = await client.post(f"/api/reservations/{reservation_id}/check-out", headers=admin_headers)
+    assert res.status_code == 200
+
+    # Verify CleaningRecord was created
+    result = await db_session.execute(select(CleaningRecord).where(CleaningRecord.room_id == uuid.UUID(room_id)))
+    record = result.scalar_one_or_none()
+    assert record is not None
+    assert record.cleaning_type == CleaningType.checkout
+    assert record.completed_at is None

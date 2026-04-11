@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import require_role
 from app.models.checkin import CheckInRecord
+from app.models.cleaning import CleaningRecord, CleaningType
 from app.models.reservation import Reservation, ReservationStatus
 from app.models.room import Room, RoomStatus
 from app.models.user import User, UserRole
@@ -87,6 +88,13 @@ async def check_out(
     result = await db.execute(select(Room).where(Room.id == record.room_id))
     room = result.scalar_one()
     room.status = RoomStatus.cleaning
+
+    # Create cleaning record
+    cleaning_record = CleaningRecord(
+        room_id=room.id,
+        cleaning_type=CleaningType.checkout,
+    )
+    db.add(cleaning_record)
 
     # Update check-in record
     from datetime import datetime, timezone
