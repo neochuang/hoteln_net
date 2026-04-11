@@ -44,6 +44,18 @@ async function saveType() {
   await loadData()
 }
 
+async function markCleaning(room: Room) {
+  if (!confirm(`確定要將房間 ${room.room_number} 標註為可清潔？`)) return
+  await api.post(`/housekeeping/rooms/${room.room_number}/mark-cleaning`)
+  await loadData()
+}
+
+async function cleanComplete(room: Room) {
+  if (!confirm(`確定房間 ${room.room_number} 已清潔完成？`)) return
+  await api.post(`/housekeeping/rooms/${room.room_number}/clean-complete`, {})
+  await loadData()
+}
+
 function typeName(id: string) {
   return roomTypes.value.find(t => t.id === id)?.name || '-'
 }
@@ -114,6 +126,22 @@ const statusLabel: Record<string, string> = {
                 <option value="cleaning">清潔中</option>
                 <option value="maintenance">維修中</option>
               </select>
+              <button
+                v-if="r.status === 'occupied' && auth.canEdit"
+                class="btn btn-sm"
+                style="background: #f59e0b; color: white; margin-left: 4px"
+                @click="markCleaning(r)"
+              >
+                標註可清潔
+              </button>
+              <button
+                v-if="r.status === 'cleaning' && auth.canEdit"
+                class="btn btn-sm btn-success"
+                style="margin-left: 4px"
+                @click="cleanComplete(r)"
+              >
+                清潔完成
+              </button>
             </td>
           </tr>
         </tbody>

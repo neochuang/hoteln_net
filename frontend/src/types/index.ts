@@ -78,3 +78,52 @@ export interface TokenResponse {
   refresh_token: string
   token_type: string
 }
+
+export interface ApiKey {
+  id: string
+  key_prefix: string
+  name: string
+  is_active: boolean
+  created_at: string
+  last_used_at: string | null
+}
+
+export interface ApiKeyCreated extends ApiKey {
+  key: string
+}
+
+export interface CleaningRecord {
+  id: string
+  room_id: string
+  cleaning_type: 'checkout' | 'daily'
+  started_at: string
+  completed_at: string | null
+  cleaned_by_name: string | null
+  reported_via: 'device' | 'staff' | null
+  api_key_id: string | null
+  staff_user_id: string | null
+  notes: string | null
+}
+
+export interface MarkCleaningResponse {
+  room_id: string
+  room_number: string
+  status: string
+  cleaning_record: CleaningRecord
+}
+
+export interface CleanCompleteResponse {
+  room_id: string
+  room_number: string
+  status: string
+  cleaning_record: CleaningRecord
+}
+
+export interface CleaningStatusRoom {
+  room_id: string
+  room_number: string
+  floor: number
+  room_type_name: string
+  cleaning_type: 'checkout' | 'daily'
+  started_at: string
+}

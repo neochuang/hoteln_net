@@ -31,7 +31,9 @@ function logout() {
         <router-link to="/reservations">訂房管理</router-link>
         <router-link to="/checkin">報到 / 退房</router-link>
         <router-link to="/breakfast">早餐管理</router-link>
+        <router-link to="/cleaning">清潔紀錄</router-link>
         <router-link v-if="auth.isAdmin" to="/users">使用者管理</router-link>
+        <router-link to="/api-keys" v-if="auth.isAdmin">API Key</router-link>
       </nav>
     </aside>
     <div class="main-content">

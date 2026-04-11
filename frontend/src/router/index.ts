@@ -47,6 +47,17 @@ const router = createRouter({
       meta: { adminOnly: true },
     },
     {
+      path: '/cleaning',
+      name: 'Cleaning',
+      component: () => import('../views/CleaningView.vue'),
+    },
+    {
+      path: '/api-keys',
+      name: 'ApiKeys',
+      meta: { adminOnly: true },
+      component: () => import('../views/ApiKeysView.vue'),
+    },
+    {
       path: '/self-checkin',
       name: 'SelfCheckIn',
       component: () => import('../views/SelfCheckInView.vue'),
