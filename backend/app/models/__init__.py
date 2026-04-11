@@ -4,6 +4,8 @@ from app.models.room import RoomType, Room
 from app.models.reservation import Reservation
 from app.models.checkin import CheckInRecord
 from app.models.breakfast import BreakfastRecord
+from app.models.api_key import ApiKey
+from app.models.cleaning import CleaningRecord
 
 __all__ = [
     "User",
@@ -13,4 +15,6 @@ __all__ = [
     "Reservation",
     "CheckInRecord",
     "BreakfastRecord",
+    "ApiKey",
+    "CleaningRecord",
 ]
