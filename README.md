@@ -238,6 +238,79 @@ available ──[check-in]──→ occupied ──[check-out]──→ cleaning
 - 清潔完成可由外部裝置（API Key）或前台人員回報
 - 系統自動判斷清潔完成後的目標狀態（有進行中訂房 → `occupied`，無 → `available`）
 
+## 旅客自助報到
+
+旅客可透過自助報到頁面完成入住，無需登入系統。
+
+- **頁面網址**: http://localhost:5173/self-checkin
+- **流程**: 輸入證件號碼 → 選擇訂房 → 系統自動分配房間並完成報到
+- **回傳資訊**: 房號、樓層、房型、入住/退房日期、早餐資訊、WiFi 密碼
+
+### Self Check-in API
+
+供自助報到機或 Kiosk 裝置串接，無需認證。
+
+**查詢訂房：**
+
+```bash
+curl -X POST http://localhost:8000/api/self-checkin/lookup \
+  -H "Content-Type: application/json" \
+  -d '{"id_number": "A123456789"}'
+```
+
+**確認報到：**
+
+```bash
+curl -X POST http://localhost:8000/api/self-checkin/confirm \
+  -H "Content-Type: application/json" \
+  -d '{"reservation_id": "<訂房 UUID>", "id_number": "A123456789"}'
+```
+
+## 房務清潔 API
+
+供清潔人員平板或感應器等外部裝置呼叫，使用 API Key 認證。
+
+### 取得 API Key
+
+由 Admin 在前端 API Key 管理頁面（http://localhost:5173/api-keys）建立，或透過 API：
+
+```bash
+curl -X POST http://localhost:8000/api/api-keys \
+  -H "Authorization: Bearer <admin_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "3F 清潔平板"}'
+```
+
+回傳的 `key` 欄位即為完整 API Key（僅顯示一次，格式如 `neo_xxxxxxxx...`）。
+
+### 查詢待清潔房間
+
+```bash
+curl http://localhost:8000/api/housekeeping/rooms/cleaning-status \
+  -H "X-API-Key: neo_xxxxxxxx..."
+```
+
+### 回報清潔完成
+
+```bash
+curl -X POST http://localhost:8000/api/housekeeping/rooms/301/clean-complete \
+  -H "X-API-Key: neo_xxxxxxxx..." \
+  -H "Content-Type: application/json" \
+  -d '{"cleaned_by_name": "王小明", "notes": "已更換床單"}'
+```
+
+- `cleaned_by_name` 和 `notes` 皆為選填
+- 系統自動判斷清潔後狀態：有進行中訂房 → `occupied`，無 → `available`
+
+### 前台標註房間可清潔
+
+前台人員將連住房客外出的房間標註為可清潔（需 JWT 認證）：
+
+```bash
+curl -X POST http://localhost:8000/api/housekeeping/rooms/301/mark-cleaning \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ## 環境變數
 
 | 變數 | 說明 | 預設值 |
