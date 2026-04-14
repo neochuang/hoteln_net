@@ -194,16 +194,39 @@ async def test_clean_complete_via_api_key(
 
 
 @pytest.mark.asyncio
-async def test_clean_complete_rejects_non_cleaning(
+async def test_clean_complete_idempotent_when_not_cleaning(
     client: AsyncClient, db_session: AsyncSession, admin_headers
 ):
+    """Room not in cleaning status — should return 200 idempotently, not 400."""
     room_type, room = await seed_room(db_session)
     res = await client.post(
         f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
         headers=admin_headers,
         json={},
     )
-    assert res.status_code == 400
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "available"
+    assert data["cleaning_record"] is None
+
+
+@pytest.mark.asyncio
+async def test_clean_complete_idempotent_available_no_record(
+    client: AsyncClient, db_session: AsyncSession, admin_headers
+):
+    """Room is available with no cleaning history — should return 200 with cleaning_record=null."""
+    room_type, room = await seed_room(db_session)
+    # room defaults to available, no CleaningRecord exists
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers=admin_headers,
+        json={},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "available"
+    assert data["cleaning_record"] is None
 
 
 @pytest.mark.asyncio
