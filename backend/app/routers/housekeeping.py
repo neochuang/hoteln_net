@@ -294,3 +294,36 @@ async def list_cleaning_requests(
     result = await db.execute(query)
     items = result.scalars().all()
     return [await _cleaning_request_response(db, r) for r in items]
+
+
+@router.post("/cleaning-requests/{request_id}/cancel", response_model=CleaningRequestResponse)
+async def cancel_cleaning_request(
+    request_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin, UserRole.staff)),
+):
+    stmt = (
+        update(CleaningRequest)
+        .where(
+            CleaningRequest.id == request_id,
+            CleaningRequest.status == CleaningRequestStatus.pending,
+        )
+        .values(
+            status=CleaningRequestStatus.cancelled,
+            cancelled_at=datetime.now(timezone.utc),
+            cancelled_by_user_id=current_user.id,
+        )
+        .returning(CleaningRequest)
+    )
+    req = (await db.execute(stmt)).scalar_one_or_none()
+
+    if req is None:
+        # Distinguish missing vs non-pending
+        existing = await db.execute(select(CleaningRequest).where(CleaningRequest.id == request_id))
+        found = existing.scalar_one_or_none()
+        if found is None:
+            raise HTTPException(status_code=404, detail="Cleaning request not found")
+        raise HTTPException(status_code=409, detail="Cleaning request no longer pending")
+
+    await db.commit()
+    return await _cleaning_request_response(db, req)

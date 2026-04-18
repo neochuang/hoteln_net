@@ -188,3 +188,80 @@ async def test_list_cleaning_requests_readonly_denied(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_cancel_pending_request_by_staff(
+    client: AsyncClient, db_session: AsyncSession, staff_headers, staff_user
+):
+    room = await _seed_room(db_session, RoomStatus.occupied)
+    _, raw = await _seed_device_key(db_session, room)
+    created = await client.post(
+        "/api/housekeeping/cleaning-requests",
+        headers={"X-API-Key": raw},
+        json={},
+    )
+    req_id = created.json()["id"]
+
+    res = await client.post(
+        f"/api/housekeeping/cleaning-requests/{req_id}/cancel",
+        headers=staff_headers,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "cancelled"
+    assert data["cancelled_by_user_id"] == str(staff_user.id)
+    assert data["cancelled_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_cancel_non_pending_returns_409(
+    client: AsyncClient, db_session: AsyncSession, staff_headers
+):
+    # Insert a request directly in 'cancelled' state
+    room = await _seed_room(db_session, RoomStatus.occupied)
+    api_key, _ = await _seed_device_key(db_session, room)
+    req = CleaningRequest(
+        room_id=room.id,
+        api_key_id=api_key.id,
+        status=CleaningRequestStatus.cancelled,
+        cancelled_at=datetime.now(timezone.utc),
+    )
+    db_session.add(req)
+    await db_session.commit()
+    await db_session.refresh(req)
+
+    res = await client.post(
+        f"/api/housekeeping/cleaning-requests/{req.id}/cancel",
+        headers=staff_headers,
+    )
+    assert res.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_cancel_missing_id_returns_404(
+    client: AsyncClient, db_session: AsyncSession, staff_headers
+):
+    res = await client.post(
+        f"/api/housekeeping/cleaning-requests/{uuid.uuid4()}/cancel",
+        headers=staff_headers,
+    )
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cancel_rejected_for_cleaner(
+    client: AsyncClient, db_session: AsyncSession, cleaner_headers
+):
+    room = await _seed_room(db_session, RoomStatus.occupied)
+    api_key, _ = await _seed_device_key(db_session, room)
+    req = CleaningRequest(room_id=room.id, api_key_id=api_key.id)
+    db_session.add(req)
+    await db_session.commit()
+    await db_session.refresh(req)
+
+    res = await client.post(
+        f"/api/housekeeping/cleaning-requests/{req.id}/cancel",
+        headers=cleaner_headers,
+    )
+    assert res.status_code == 403
