@@ -63,7 +63,7 @@ async def _cleaning_request_response(
 async def mark_cleaning(
     room_number: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.admin, UserRole.staff)),
+    current_user: User = Depends(require_role(UserRole.admin, UserRole.staff, UserRole.cleaner)),
 ):
     result = await db.execute(select(Room).where(Room.room_number == room_number))
     room = result.scalar_one_or_none()
@@ -79,6 +79,21 @@ async def mark_cleaning(
         cleaning_type=CleaningType.daily,
     )
     db.add(record)
+    await db.flush()  # ensures record.id is assigned
+
+    # Atomically fulfill any pending request for this room
+    await db.execute(
+        update(CleaningRequest)
+        .where(
+            CleaningRequest.room_id == room.id,
+            CleaningRequest.status == CleaningRequestStatus.pending,
+        )
+        .values(
+            status=CleaningRequestStatus.fulfilled,
+            fulfilled_at=datetime.now(timezone.utc),
+            fulfilled_by_cleaning_record_id=record.id,
+        )
+    )
 
     await db.commit()
     await db.refresh(room)

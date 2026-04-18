@@ -406,3 +406,63 @@ async def test_clean_complete_idempotent_via_api_key(
     )
     assert res.status_code == 200
     assert res.json()["cleaning_record"] is None
+
+
+from app.models.cleaning_request import CleaningRequest, CleaningRequestStatus
+
+
+@pytest.mark.asyncio
+async def test_mark_cleaning_auto_fulfills_pending_request(
+    client: AsyncClient, db_session: AsyncSession, admin_user, admin_headers
+):
+    room_type, room = await seed_room(db_session)
+    _ = await seed_checked_in_reservation(db_session, room, room_type, admin_user.id)
+    room.status = RoomStatus.occupied
+    await db_session.commit()
+
+    api_key = ApiKey(
+        id=uuid.uuid4(),
+        key_hash="x",
+        key_prefix="neo_test",
+        name="dev",
+        is_active=True,
+        room_id=room.id,
+    )
+    db_session.add(api_key)
+    req = CleaningRequest(
+        id=uuid.uuid4(),
+        room_id=room.id,
+        api_key_id=api_key.id,
+        notes="pls",
+    )
+    db_session.add(req)
+    await db_session.commit()
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/mark-cleaning",
+        headers=admin_headers,
+    )
+    assert res.status_code == 200
+    record_id = res.json()["cleaning_record"]["id"]
+
+    await db_session.refresh(req)
+    assert req.status == CleaningRequestStatus.fulfilled
+    assert str(req.fulfilled_by_cleaning_record_id) == record_id
+    assert req.fulfilled_at is not None
+
+
+@pytest.mark.asyncio
+async def test_mark_cleaning_without_request_still_works(
+    client: AsyncClient, db_session: AsyncSession, admin_user, admin_headers
+):
+    """Existing behaviour preserved: no request → still creates record, no error."""
+    room_type, room = await seed_room(db_session)
+    _ = await seed_checked_in_reservation(db_session, room, room_type, admin_user.id)
+    room.status = RoomStatus.occupied
+    await db_session.commit()
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/mark-cleaning",
+        headers=admin_headers,
+    )
+    assert res.status_code == 200
