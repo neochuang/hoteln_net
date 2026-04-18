@@ -86,3 +86,28 @@ async def staff_token(staff_user: User) -> str:
 @pytest_asyncio.fixture
 async def staff_headers(staff_token: str) -> dict:
     return {"Authorization": f"Bearer {staff_token}"}
+
+
+@pytest_asyncio.fixture
+async def cleaner_user(db_session: AsyncSession) -> User:
+    user = User(
+        id=uuid.uuid4(),
+        username="testcleaner",
+        password_hash=hash_password("cleaner123"),
+        full_name="Test Cleaner",
+        role=UserRole.cleaner,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def cleaner_token(cleaner_user: User) -> str:
+    return create_access_token(str(cleaner_user.id))
+
+
+@pytest_asyncio.fixture
+async def cleaner_headers(cleaner_token: str) -> dict:
+    return {"Authorization": f"Bearer {cleaner_token}"}
