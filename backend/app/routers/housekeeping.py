@@ -4,13 +4,15 @@ from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.dependencies import get_device_or_user, require_role
+from app.dependencies import get_api_key, get_device_or_user, require_role
 from app.models.api_key import ApiKey
 from app.models.cleaning import CleaningRecord, CleaningType, ReportedVia
+from app.models.cleaning_request import CleaningRequest, CleaningRequestStatus
 from app.models.reservation import Reservation, ReservationStatus
 from app.models.room import Room, RoomStatus
 from app.models.user import User, UserRole
@@ -21,6 +23,7 @@ from app.schemas.cleaning import (
     CleaningStatusRoom,
     MarkCleaningResponse,
 )
+from app.schemas.cleaning_request import CleaningRequestCreate, CleaningRequestResponse
 
 router = APIRouter()
 
@@ -33,6 +36,27 @@ async def _has_active_reservation(db: AsyncSession, room_id: uuid.UUID) -> bool:
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _cleaning_request_response(
+    db: AsyncSession, req: CleaningRequest
+) -> CleaningRequestResponse:
+    # room_number is needed in the response; fetch via the FK
+    result = await db.execute(select(Room.room_number).where(Room.id == req.room_id))
+    room_number = result.scalar_one()
+    return CleaningRequestResponse(
+        id=req.id,
+        room_id=req.room_id,
+        room_number=room_number,
+        api_key_id=req.api_key_id,
+        notes=req.notes,
+        status=req.status,
+        requested_at=req.requested_at,
+        fulfilled_at=req.fulfilled_at,
+        fulfilled_by_cleaning_record_id=req.fulfilled_by_cleaning_record_id,
+        cancelled_at=req.cancelled_at,
+        cancelled_by_user_id=req.cancelled_by_user_id,
+    )
 
 
 @router.post("/rooms/{room_number}/mark-cleaning", response_model=MarkCleaningResponse)
@@ -195,3 +219,56 @@ async def list_cleaning_records(
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.post("/cleaning-requests", response_model=CleaningRequestResponse)
+async def create_cleaning_request(
+    body: CleaningRequestCreate,
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key),
+):
+    if api_key.room_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Device not bound to a room",
+        )
+
+    result = await db.execute(select(Room).where(Room.id == api_key.room_id))
+    room = result.scalar_one_or_none()
+    if room is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Device's bound room no longer exists",
+        )
+    if room.status != RoomStatus.occupied:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Room is not occupied",
+        )
+
+    # Snapshot identifiers so they survive a potential rollback (which expires ORM state)
+    room_id = room.id
+    api_key_id = api_key.id
+
+    req = CleaningRequest(
+        room_id=room_id,
+        api_key_id=api_key_id,
+        notes=body.notes,
+    )
+    db.add(req)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Partial unique index violation → an existing pending request is present
+        await db.rollback()
+        existing = await db.execute(
+            select(CleaningRequest).where(
+                CleaningRequest.room_id == room_id,
+                CleaningRequest.status == CleaningRequestStatus.pending,
+            )
+        )
+        req = existing.scalar_one()
+    else:
+        await db.refresh(req)
+
+    return await _cleaning_request_response(db, req)

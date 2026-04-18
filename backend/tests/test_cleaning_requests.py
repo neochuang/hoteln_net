@@ -1,12 +1,43 @@
 import uuid
 from datetime import datetime, timezone
 
+import bcrypt
 import pytest
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cleaning_request import CleaningRequest, CleaningRequestStatus
 from app.models.room import Room, RoomStatus, RoomType
 from app.models.api_key import ApiKey
+
+
+async def _seed_room(db_session: AsyncSession, status: RoomStatus = RoomStatus.occupied) -> Room:
+    room_type = RoomType(id=uuid.uuid4(), name="標準房", capacity=2, base_price=2000)
+    room = Room(
+        id=uuid.uuid4(),
+        room_number="601",
+        floor=6,
+        room_type_id=room_type.id,
+        status=status,
+    )
+    db_session.add_all([room_type, room])
+    await db_session.commit()
+    return room
+
+
+async def _seed_device_key(db_session: AsyncSession, room: Room | None) -> tuple[ApiKey, str]:
+    raw = "neo_device_req_test_xxx"
+    api_key = ApiKey(
+        id=uuid.uuid4(),
+        key_hash=bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode(),
+        key_prefix=raw[:8],
+        name="Room Device",
+        is_active=True,
+        room_id=room.id if room else None,
+    )
+    db_session.add(api_key)
+    await db_session.commit()
+    return api_key, raw
 
 
 @pytest.mark.asyncio
@@ -33,3 +64,75 @@ async def test_cleaning_request_table_created(db_session: AsyncSession):
 
     assert req.status == CleaningRequestStatus.pending
     assert req.requested_at is not None
+
+
+@pytest.mark.asyncio
+async def test_create_cleaning_request_happy_path(
+    client: AsyncClient, db_session: AsyncSession
+):
+    room = await _seed_room(db_session, RoomStatus.occupied)
+    _, raw = await _seed_device_key(db_session, room)
+
+    res = await client.post(
+        "/api/housekeeping/cleaning-requests",
+        headers={"X-API-Key": raw},
+        json={"notes": "toilet paper"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "pending"
+    assert data["room_number"] == room.room_number
+    assert data["notes"] == "toilet paper"
+
+
+@pytest.mark.asyncio
+async def test_create_cleaning_request_unbound_device_rejected(
+    client: AsyncClient, db_session: AsyncSession
+):
+    _, raw = await _seed_device_key(db_session, room=None)
+    res = await client.post(
+        "/api/housekeeping/cleaning-requests",
+        headers={"X-API-Key": raw},
+        json={},
+    )
+    assert res.status_code == 400
+    assert "not bound" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_cleaning_request_non_occupied_rejected(
+    client: AsyncClient, db_session: AsyncSession
+):
+    room = await _seed_room(db_session, RoomStatus.available)
+    _, raw = await _seed_device_key(db_session, room)
+    res = await client.post(
+        "/api/housekeeping/cleaning-requests",
+        headers={"X-API-Key": raw},
+        json={},
+    )
+    assert res.status_code == 400
+    assert "not occupied" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_cleaning_request_idempotent_when_pending_exists(
+    client: AsyncClient, db_session: AsyncSession
+):
+    room = await _seed_room(db_session, RoomStatus.occupied)
+    _, raw = await _seed_device_key(db_session, room)
+
+    res1 = await client.post(
+        "/api/housekeeping/cleaning-requests",
+        headers={"X-API-Key": raw},
+        json={"notes": "first"},
+    )
+    res2 = await client.post(
+        "/api/housekeeping/cleaning-requests",
+        headers={"X-API-Key": raw},
+        json={"notes": "second"},
+    )
+    assert res1.status_code == 200
+    assert res2.status_code == 200
+    assert res1.json()["id"] == res2.json()["id"]
+    # second call must NOT overwrite the first notes
+    assert res2.json()["notes"] == "first"
