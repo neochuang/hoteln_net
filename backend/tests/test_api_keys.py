@@ -1,5 +1,8 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
@@ -56,3 +59,73 @@ async def test_delete_api_key(client: AsyncClient, admin_headers):
 async def test_staff_cannot_manage_api_keys(client: AsyncClient, staff_headers):
     res = await client.post("/api/api-keys", headers=staff_headers, json={"name": "Attempt"})
     assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_api_key_with_room_binding(
+    client: AsyncClient, db_session: AsyncSession, admin_headers
+):
+    from app.models.room import Room, RoomStatus, RoomType
+
+    room_type = RoomType(id=uuid.uuid4(), name="標準房", capacity=2, base_price=2000)
+    room = Room(
+        id=uuid.uuid4(),
+        room_number="701",
+        floor=7,
+        room_type_id=room_type.id,
+        status=RoomStatus.available,
+    )
+    db_session.add_all([room_type, room])
+    await db_session.commit()
+
+    res = await client.post(
+        "/api/api-keys",
+        headers=admin_headers,
+        json={"name": "Room 701 tablet", "room_id": str(room.id)},
+    )
+    assert res.status_code == 201
+    assert res.json()["room_id"] == str(room.id)
+
+
+@pytest.mark.asyncio
+async def test_create_api_key_unknown_room_id_rejected(
+    client: AsyncClient, db_session: AsyncSession, admin_headers
+):
+    res = await client.post(
+        "/api/api-keys",
+        headers=admin_headers,
+        json={"name": "ghost", "room_id": str(uuid.uuid4())},
+    )
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_patch_api_key_sets_room_id(
+    client: AsyncClient, db_session: AsyncSession, admin_headers
+):
+    from app.models.room import Room, RoomStatus, RoomType
+
+    room_type = RoomType(id=uuid.uuid4(), name="標準房", capacity=2, base_price=2000)
+    room = Room(
+        id=uuid.uuid4(),
+        room_number="702",
+        floor=7,
+        room_type_id=room_type.id,
+        status=RoomStatus.available,
+    )
+    db_session.add_all([room_type, room])
+    await db_session.commit()
+
+    created = await client.post(
+        "/api/api-keys",
+        headers=admin_headers,
+        json={"name": "later bind"},
+    )
+    key_id = created.json()["id"]
+    res = await client.patch(
+        f"/api/api-keys/{key_id}",
+        headers=admin_headers,
+        json={"room_id": str(room.id)},
+    )
+    assert res.status_code == 200
+    assert res.json()["room_id"] == str(room.id)
