@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.api_key import ApiKey
 from app.models.cleaning import CleaningRecord, CleaningType
+from app.models.cleaning_request import CleaningRequest, CleaningRequestStatus
 from app.models.guest import Guest, IDType
 from app.models.reservation import Reservation, ReservationStatus
 from app.models.room import Room, RoomStatus, RoomType
@@ -406,9 +407,6 @@ async def test_clean_complete_idempotent_via_api_key(
     )
     assert res.status_code == 200
     assert res.json()["cleaning_record"] is None
-
-
-from app.models.cleaning_request import CleaningRequest, CleaningRequestStatus
 
 
 @pytest.mark.asyncio
