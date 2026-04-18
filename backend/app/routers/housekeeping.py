@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -80,47 +80,49 @@ async def clean_complete(
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
-    # --- Active cleaning: execute completion flow ---
+    # --- Active cleaning: atomically claim the pending record ---
     if room.status == RoomStatus.cleaning:
-        result = await db.execute(
-            select(CleaningRecord)
-            .where(CleaningRecord.room_id == room.id, CleaningRecord.completed_at.is_(None))
-            .order_by(CleaningRecord.started_at.desc())
-            .limit(1)
+        values = {
+            "completed_at": datetime.now(timezone.utc),
+            "cleaned_by_name": body.cleaned_by_name,
+            "notes": body.notes,
+        }
+        if isinstance(auth, ApiKey):
+            values["reported_via"] = ReportedVia.device
+            values["api_key_id"] = auth.id
+        else:
+            values["reported_via"] = ReportedVia.staff
+            values["staff_user_id"] = auth.id
+
+        stmt = (
+            update(CleaningRecord)
+            .where(
+                CleaningRecord.room_id == room.id,
+                CleaningRecord.completed_at.is_(None),
+            )
+            .values(**values)
+            .returning(CleaningRecord)
         )
-        record = result.scalar_one_or_none()
-        if record is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No pending cleaning record found",
+        record = (await db.execute(stmt)).scalar_one_or_none()
+
+        if record is not None:
+            has_active = await _has_active_reservation(db, room.id)
+            room.status = RoomStatus.occupied if has_active else RoomStatus.available
+
+            await db.commit()
+            await db.refresh(room)
+
+            return CleanCompleteResponse(
+                room_id=room.id,
+                room_number=room.room_number,
+                status=room.status.value,
+                cleaning_record=CleaningRecordResponse.model_validate(record),
             )
 
-        record.completed_at = datetime.now(timezone.utc)
-        record.cleaned_by_name = body.cleaned_by_name
-        record.notes = body.notes
-
-        if isinstance(auth, ApiKey):
-            record.reported_via = ReportedVia.device
-            record.api_key_id = auth.id
-        else:
-            record.reported_via = ReportedVia.staff
-            record.staff_user_id = auth.id
-
-        has_active = await _has_active_reservation(db, room.id)
-        room.status = RoomStatus.occupied if has_active else RoomStatus.available
-
-        await db.commit()
+        # Race lost (another request already completed) — refresh and fall through
         await db.refresh(room)
-        await db.refresh(record)
 
-        return CleanCompleteResponse(
-            room_id=room.id,
-            room_number=room.room_number,
-            status=room.status.value,
-            cleaning_record=CleaningRecordResponse.model_validate(record),
-        )
-
-    # --- Not cleaning: idempotent return ---
+    # --- Idempotent return ---
     result = await db.execute(
         select(CleaningRecord)
         .where(CleaningRecord.room_id == room.id, CleaningRecord.completed_at.is_not(None))

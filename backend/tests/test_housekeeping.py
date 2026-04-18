@@ -358,6 +358,40 @@ async def test_clean_complete_idempotent_maintenance(
 
 
 @pytest.mark.asyncio
+async def test_clean_complete_race_pending_record_already_claimed(
+    client: AsyncClient, db_session: AsyncSession, admin_headers
+):
+    """Simulates losing a concurrent race: room.status is still 'cleaning' but
+    the pending record has already been completed by another request. The losing
+    request must fall through to idempotent 200, not raise 404."""
+    room_type, room = await seed_room(db_session)
+    room.status = RoomStatus.cleaning
+    await db_session.commit()
+
+    # Winner already claimed & completed the pending record; room.status not yet
+    # transitioned (as it would be in the narrow window between commits).
+    completed = CleaningRecord(
+        id=uuid.uuid4(),
+        room_id=room.id,
+        cleaning_type=CleaningType.checkout,
+        completed_at=datetime(2026, 4, 15, 10, 0, tzinfo=timezone.utc),
+        cleaned_by_name="winner",
+    )
+    db_session.add(completed)
+    await db_session.commit()
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers=admin_headers,
+        json={"cleaned_by_name": "loser"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["cleaning_record"]["id"] == str(completed.id)
+    assert data["cleaning_record"]["cleaned_by_name"] == "winner"  # not overwritten
+
+
+@pytest.mark.asyncio
 async def test_clean_complete_idempotent_via_api_key(
     client: AsyncClient, db_session: AsyncSession,
 ):
