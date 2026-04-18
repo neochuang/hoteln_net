@@ -464,3 +464,64 @@ async def test_mark_cleaning_without_request_still_works(
         headers=admin_headers,
     )
     assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_cleaner_can_mark_cleaning(
+    client: AsyncClient, db_session: AsyncSession, admin_user, cleaner_headers
+):
+    room_type, room = await seed_room(db_session)
+    _ = await seed_checked_in_reservation(db_session, room, room_type, admin_user.id)
+    room.status = RoomStatus.occupied
+    await db_session.commit()
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/mark-cleaning",
+        headers=cleaner_headers,
+    )
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_cleaner_can_clean_complete(
+    client: AsyncClient, db_session: AsyncSession, cleaner_headers
+):
+    room_type, room = await seed_room(db_session)
+    room.status = RoomStatus.cleaning
+    await db_session.commit()
+    record = CleaningRecord(
+        id=uuid.uuid4(), room_id=room.id, cleaning_type=CleaningType.checkout
+    )
+    db_session.add(record)
+    await db_session.commit()
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers=cleaner_headers,
+        json={"cleaned_by_name": "清潔阿姨"},
+    )
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_cleaner_can_view_cleaning_status(
+    client: AsyncClient, db_session: AsyncSession, cleaner_headers
+):
+    res = await client.get("/api/housekeeping/rooms/cleaning-status", headers=cleaner_headers)
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_cleaner_can_list_cleaning_records(
+    client: AsyncClient, db_session: AsyncSession, cleaner_headers
+):
+    res = await client.get("/api/housekeeping/cleaning-records", headers=cleaner_headers)
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_cleaner_cannot_access_users(
+    client: AsyncClient, db_session: AsyncSession, cleaner_headers
+):
+    res = await client.get("/api/users", headers=cleaner_headers)
+    assert res.status_code == 403

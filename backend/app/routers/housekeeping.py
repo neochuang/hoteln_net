@@ -220,7 +220,7 @@ async def list_cleaning_records(
     date_to: date | None = None,
     cleaning_type: CleaningType | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.admin, UserRole.staff)),
+    _: User = Depends(require_role(UserRole.admin, UserRole.staff, UserRole.cleaner)),
 ):
     query = select(CleaningRecord).order_by(CleaningRecord.started_at.desc())
     if room_id:
