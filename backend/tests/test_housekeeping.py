@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 import bcrypt
 import pytest
@@ -194,16 +194,20 @@ async def test_clean_complete_via_api_key(
 
 
 @pytest.mark.asyncio
-async def test_clean_complete_rejects_non_cleaning(
+async def test_clean_complete_idempotent_when_not_cleaning(
     client: AsyncClient, db_session: AsyncSession, admin_headers
 ):
+    """Room not in cleaning status — should return 200 idempotently, not 400."""
     room_type, room = await seed_room(db_session)
     res = await client.post(
         f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
         headers=admin_headers,
         json={},
     )
-    assert res.status_code == 400
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "available"
+    assert data["cleaning_record"] is None
 
 
 @pytest.mark.asyncio
@@ -260,3 +264,111 @@ async def test_list_cleaning_records(client: AsyncClient, db_session: AsyncSessi
     data = res.json()
     assert len(data) == 1
     assert data[0]["room_id"] == str(room.id)
+
+
+@pytest.mark.asyncio
+async def test_clean_complete_idempotent_repeat_call(
+    client: AsyncClient, db_session: AsyncSession, admin_headers
+):
+    """Call clean-complete twice — second call should return 200 with the completed record."""
+    room_type, room = await seed_room(db_session)
+    room.status = RoomStatus.cleaning
+    await db_session.commit()
+
+    record = CleaningRecord(
+        id=uuid.uuid4(),
+        room_id=room.id,
+        cleaning_type=CleaningType.checkout,
+    )
+    db_session.add(record)
+    await db_session.commit()
+
+    # First call: actually completes cleaning
+    res1 = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers=admin_headers,
+        json={"cleaned_by_name": "陳小美"},
+    )
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "available"
+    first_record_id = res1.json()["cleaning_record"]["id"]
+
+    # Second call: idempotent return
+    res2 = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers=admin_headers,
+        json={"cleaned_by_name": "should be ignored"},
+    )
+    assert res2.status_code == 200
+    data = res2.json()
+    assert data["status"] == "available"
+    assert data["cleaning_record"]["id"] == first_record_id
+    assert data["cleaning_record"]["cleaned_by_name"] == "陳小美"  # not overwritten
+
+
+@pytest.mark.asyncio
+async def test_clean_complete_idempotent_occupied_with_record(
+    client: AsyncClient, db_session: AsyncSession, admin_user, admin_headers
+):
+    """Occupied room with a completed cleaning record — returns 200 with that record."""
+    room_type, room = await seed_room(db_session)
+    reservation = await seed_checked_in_reservation(db_session, room, room_type, admin_user.id)
+    room.status = RoomStatus.occupied
+    await db_session.commit()
+
+    record = CleaningRecord(
+        id=uuid.uuid4(),
+        room_id=room.id,
+        cleaning_type=CleaningType.daily,
+        completed_at=datetime(2026, 4, 15, 10, 0, tzinfo=timezone.utc),
+        cleaned_by_name="王大姊",
+    )
+    db_session.add(record)
+    await db_session.commit()
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers=admin_headers,
+        json={},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "occupied"
+    assert data["cleaning_record"]["id"] == str(record.id)
+
+
+@pytest.mark.asyncio
+async def test_clean_complete_idempotent_maintenance(
+    client: AsyncClient, db_session: AsyncSession, admin_headers
+):
+    """Maintenance room — returns 200 idempotently."""
+    room_type, room = await seed_room(db_session)
+    room.status = RoomStatus.maintenance
+    await db_session.commit()
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers=admin_headers,
+        json={},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "maintenance"
+    assert data["cleaning_record"] is None
+
+
+@pytest.mark.asyncio
+async def test_clean_complete_idempotent_via_api_key(
+    client: AsyncClient, db_session: AsyncSession,
+):
+    """Device calls clean-complete on non-cleaning room — returns 200."""
+    room_type, room = await seed_room(db_session)
+    api_key, raw_key = await seed_api_key(db_session)
+
+    res = await client.post(
+        f"/api/housekeeping/rooms/{room.room_number}/clean-complete",
+        headers={"X-API-Key": raw_key},
+        json={},
+    )
+    assert res.status_code == 200
+    assert res.json()["cleaning_record"] is None

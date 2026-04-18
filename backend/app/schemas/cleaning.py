@@ -39,7 +39,7 @@ class CleanCompleteResponse(BaseModel):
     room_id: uuid.UUID
     room_number: str
     status: str
-    cleaning_record: CleaningRecordResponse
+    cleaning_record: CleaningRecordResponse | None = None
 
     model_config = {"from_attributes": True}
 

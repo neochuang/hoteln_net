@@ -79,45 +79,61 @@ async def clean_complete(
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    if room.status != RoomStatus.cleaning:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Room is not in cleaning status")
 
-    # Find the most recent incomplete cleaning record for this room
+    # --- Active cleaning: execute completion flow ---
+    if room.status == RoomStatus.cleaning:
+        result = await db.execute(
+            select(CleaningRecord)
+            .where(CleaningRecord.room_id == room.id, CleaningRecord.completed_at.is_(None))
+            .order_by(CleaningRecord.started_at.desc())
+            .limit(1)
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No pending cleaning record found",
+            )
+
+        record.completed_at = datetime.now(timezone.utc)
+        record.cleaned_by_name = body.cleaned_by_name
+        record.notes = body.notes
+
+        if isinstance(auth, ApiKey):
+            record.reported_via = ReportedVia.device
+            record.api_key_id = auth.id
+        else:
+            record.reported_via = ReportedVia.staff
+            record.staff_user_id = auth.id
+
+        has_active = await _has_active_reservation(db, room.id)
+        room.status = RoomStatus.occupied if has_active else RoomStatus.available
+
+        await db.commit()
+        await db.refresh(room)
+        await db.refresh(record)
+
+        return CleanCompleteResponse(
+            room_id=room.id,
+            room_number=room.room_number,
+            status=room.status.value,
+            cleaning_record=CleaningRecordResponse.model_validate(record),
+        )
+
+    # --- Not cleaning: idempotent return ---
     result = await db.execute(
         select(CleaningRecord)
-        .where(CleaningRecord.room_id == room.id, CleaningRecord.completed_at.is_(None))
-        .order_by(CleaningRecord.started_at.desc())
+        .where(CleaningRecord.room_id == room.id, CleaningRecord.completed_at.is_not(None))
+        .order_by(CleaningRecord.completed_at.desc())
         .limit(1)
     )
-    record = result.scalar_one_or_none()
-    if record is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No pending cleaning record found")
-
-    # Update cleaning record
-    record.completed_at = datetime.now(timezone.utc)
-    record.cleaned_by_name = body.cleaned_by_name
-    record.notes = body.notes
-
-    if isinstance(auth, ApiKey):
-        record.reported_via = ReportedVia.device
-        record.api_key_id = auth.id
-    else:
-        record.reported_via = ReportedVia.staff
-        record.staff_user_id = auth.id
-
-    # Determine target room status
-    has_active = await _has_active_reservation(db, room.id)
-    room.status = RoomStatus.occupied if has_active else RoomStatus.available
-
-    await db.commit()
-    await db.refresh(room)
-    await db.refresh(record)
+    last_record = result.scalar_one_or_none()
 
     return CleanCompleteResponse(
         room_id=room.id,
         room_number=room.room_number,
         status=room.status.value,
-        cleaning_record=CleaningRecordResponse.model_validate(record),
+        cleaning_record=CleaningRecordResponse.model_validate(last_record) if last_record else None,
     )
 
 
