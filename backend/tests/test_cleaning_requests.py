@@ -136,3 +136,55 @@ async def test_create_cleaning_request_idempotent_when_pending_exists(
     assert res1.json()["id"] == res2.json()["id"]
     # second call must NOT overwrite the first notes
     assert res2.json()["notes"] == "first"
+
+
+@pytest.mark.asyncio
+async def test_list_cleaning_requests_default_pending(
+    client: AsyncClient, db_session: AsyncSession, staff_headers
+):
+    room = await _seed_room(db_session, RoomStatus.occupied)
+    _, raw = await _seed_device_key(db_session, room)
+    # create one pending
+    await client.post(
+        "/api/housekeeping/cleaning-requests",
+        headers={"X-API-Key": raw},
+        json={"notes": "hi"},
+    )
+    res = await client.get("/api/housekeeping/cleaning-requests", headers=staff_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_list_cleaning_requests_cleaner_allowed(
+    client: AsyncClient, db_session: AsyncSession, cleaner_headers
+):
+    res = await client.get("/api/housekeeping/cleaning-requests", headers=cleaner_headers)
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_list_cleaning_requests_readonly_denied(
+    client: AsyncClient, db_session: AsyncSession
+):
+    from app.models.user import User, UserRole
+    from app.services.auth import create_access_token, hash_password
+
+    ro = User(
+        id=uuid.uuid4(),
+        username="ro",
+        password_hash=hash_password("x"),
+        full_name="RO",
+        role=UserRole.readonly,
+    )
+    db_session.add(ro)
+    await db_session.commit()
+    token = create_access_token(str(ro.id))
+
+    res = await client.get(
+        "/api/housekeeping/cleaning-requests",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 403

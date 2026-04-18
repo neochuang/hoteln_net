@@ -272,3 +272,25 @@ async def create_cleaning_request(
         await db.refresh(req)
 
     return await _cleaning_request_response(db, req)
+
+
+@router.get("/cleaning-requests", response_model=list[CleaningRequestResponse])
+async def list_cleaning_requests(
+    status_filter: str | None = Query("pending", alias="status"),
+    room_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.admin, UserRole.staff, UserRole.cleaner)),
+):
+    query = select(CleaningRequest).order_by(CleaningRequest.requested_at.desc())
+    if status_filter and status_filter != "all":
+        try:
+            status_enum = CleaningRequestStatus(status_filter)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status_filter}")
+        query = query.where(CleaningRequest.status == status_enum)
+    if room_id is not None:
+        query = query.where(CleaningRequest.room_id == room_id)
+
+    result = await db.execute(query)
+    items = result.scalars().all()
+    return [await _cleaning_request_response(db, r) for r in items]
