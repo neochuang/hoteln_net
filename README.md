@@ -1,4 +1,4 @@
-# Neo Hotel Check-in System
+# Grand Hilai Check-in System
 
 飯店入住管理系統，提供旅客管理、房間管理、訂房、報到/退房、早餐管理、房務清潔通報等功能。
 

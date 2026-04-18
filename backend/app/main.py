@@ -12,7 +12,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Neo Hotel Check-in System",
+    title="Grand Hilai Check-in System",
     version="0.1.0",
     lifespan=lifespan,
 )

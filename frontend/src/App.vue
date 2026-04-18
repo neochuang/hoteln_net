@@ -23,7 +23,7 @@ function logout() {
   </div>
   <div v-else class="app-layout">
     <aside class="sidebar">
-      <div class="sidebar-title">Neo Hotel</div>
+      <div class="sidebar-title">Grand Hilai</div>
       <nav>
         <router-link to="/">Dashboard</router-link>
         <router-link to="/guests">旅客管理</router-link>
