@@ -117,7 +117,7 @@ export interface CleanCompleteResponse {
   room_id: string
   room_number: string
   status: string
-  cleaning_record: CleaningRecord
+  cleaning_record: CleaningRecord | null
 }
 
 export interface CleaningStatusRoom {
