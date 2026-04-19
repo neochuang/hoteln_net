@@ -1,4 +1,4 @@
-# Neo Hotel Check-in System
+# Grand Hilai Check-in System
 
 ## Project Overview
 
