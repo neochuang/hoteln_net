@@ -39,11 +39,11 @@ async def _has_active_reservation(db: AsyncSession, room_id: uuid.UUID) -> bool:
 
 
 async def _cleaning_request_response(
-    db: AsyncSession, req: CleaningRequest
+    db: AsyncSession, req: CleaningRequest, room_number: str | None = None
 ) -> CleaningRequestResponse:
-    # room_number is needed in the response; fetch via the FK
-    result = await db.execute(select(Room.room_number).where(Room.id == req.room_id))
-    room_number = result.scalar_one()
+    if room_number is None:
+        result = await db.execute(select(Room.room_number).where(Room.id == req.room_id))
+        room_number = result.scalar_one()
     return CleaningRequestResponse(
         id=req.id,
         room_id=req.room_id,
@@ -296,7 +296,11 @@ async def list_cleaning_requests(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.admin, UserRole.staff, UserRole.cleaner)),
 ):
-    query = select(CleaningRequest).order_by(CleaningRequest.requested_at.desc())
+    query = (
+        select(CleaningRequest)
+        .options(selectinload(CleaningRequest.room))
+        .order_by(CleaningRequest.requested_at.desc())
+    )
     if status_filter and status_filter != "all":
         try:
             status_enum = CleaningRequestStatus(status_filter)
@@ -308,7 +312,10 @@ async def list_cleaning_requests(
 
     result = await db.execute(query)
     items = result.scalars().all()
-    return [await _cleaning_request_response(db, r) for r in items]
+    return [
+        await _cleaning_request_response(db, r, room_number=r.room.room_number)
+        for r in items
+    ]
 
 
 @router.post("/cleaning-requests/{request_id}/cancel", response_model=CleaningRequestResponse)
