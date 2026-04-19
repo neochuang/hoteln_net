@@ -15,7 +15,7 @@ export const useAuthStore = defineStore('auth', () => {
   const canAccessAdminArea = computed(
     () => user.value?.role === 'admin' || user.value?.role === 'staff'
   )
-  const homeRoute = computed(() => (user.value?.role === 'cleaner' ? '/housekeeping' : '/'))
+  const homeRoute = computed(() => (isCleaner.value ? '/housekeeping' : '/'))
 
   async function login(username: string, password: string) {
     const res = await api.post('/auth/login', { username, password })

@@ -38,12 +38,9 @@ async def _has_active_reservation(db: AsyncSession, room_id: uuid.UUID) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def _cleaning_request_response(
-    db: AsyncSession, req: CleaningRequest, room_number: str | None = None
+def _build_cleaning_request_response(
+    req: CleaningRequest, room_number: str
 ) -> CleaningRequestResponse:
-    if room_number is None:
-        result = await db.execute(select(Room.room_number).where(Room.id == req.room_id))
-        room_number = result.scalar_one()
     return CleaningRequestResponse(
         id=req.id,
         room_id=req.room_id,
@@ -57,6 +54,13 @@ async def _cleaning_request_response(
         cancelled_at=req.cancelled_at,
         cancelled_by_user_id=req.cancelled_by_user_id,
     )
+
+
+async def _cleaning_request_response(
+    db: AsyncSession, req: CleaningRequest
+) -> CleaningRequestResponse:
+    result = await db.execute(select(Room.room_number).where(Room.id == req.room_id))
+    return _build_cleaning_request_response(req, result.scalar_one())
 
 
 @router.post("/rooms/{room_number}/mark-cleaning", response_model=MarkCleaningResponse)
@@ -312,10 +316,7 @@ async def list_cleaning_requests(
 
     result = await db.execute(query)
     items = result.scalars().all()
-    return [
-        await _cleaning_request_response(db, r, room_number=r.room.room_number)
-        for r in items
-    ]
+    return [_build_cleaning_request_response(r, r.room.room_number) for r in items]
 
 
 @router.post("/cleaning-requests/{request_id}/cancel", response_model=CleaningRequestResponse)
