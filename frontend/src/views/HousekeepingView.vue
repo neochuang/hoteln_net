@@ -10,20 +10,31 @@ const inProgress = ref<CleaningStatusRoom[]>([])
 const completeTarget = ref<CleaningStatusRoom | null>(null)
 const cleanedByName = ref('')
 const completeNotes = ref('')
+const errorMessage = ref('')
 let timer: number | undefined
 
 async function load() {
-  const [pRes, iRes] = await Promise.all([
-    api.get('/housekeeping/cleaning-requests', { params: { status: 'pending' } }),
-    api.get('/housekeeping/rooms/cleaning-status'),
-  ])
-  pending.value = pRes.data
-  inProgress.value = iRes.data
+  errorMessage.value = ''
+  try {
+    const [pRes, iRes] = await Promise.all([
+      api.get('/housekeeping/cleaning-requests', { params: { status: 'pending' } }),
+      api.get('/housekeeping/rooms/cleaning-status'),
+    ])
+    pending.value = pRes.data
+    inProgress.value = iRes.data
+  } catch (err: any) {
+    errorMessage.value = err.response?.data?.detail || '載入清潔資料失敗'
+  }
 }
 
 async function startCleaning(roomNumber: string) {
-  await api.post(`/housekeeping/rooms/${roomNumber}/mark-cleaning`)
-  await load()
+  errorMessage.value = ''
+  try {
+    await api.post(`/housekeeping/rooms/${roomNumber}/mark-cleaning`)
+    await load()
+  } catch (err: any) {
+    errorMessage.value = err.response?.data?.detail || '啟動清潔失敗'
+  }
 }
 
 function openCompleteModal(room: CleaningStatusRoom) {
@@ -34,12 +45,17 @@ function openCompleteModal(room: CleaningStatusRoom) {
 
 async function submitComplete() {
   if (!completeTarget.value) return
-  await api.post(`/housekeeping/rooms/${completeTarget.value.room_number}/clean-complete`, {
-    cleaned_by_name: cleanedByName.value || null,
-    notes: completeNotes.value || null,
-  })
-  completeTarget.value = null
-  await load()
+  errorMessage.value = ''
+  try {
+    await api.post(`/housekeeping/rooms/${completeTarget.value.room_number}/clean-complete`, {
+      cleaned_by_name: cleanedByName.value || null,
+      notes: completeNotes.value || null,
+    })
+    completeTarget.value = null
+    await load()
+  } catch (err: any) {
+    errorMessage.value = err.response?.data?.detail || '送出失敗'
+  }
 }
 
 function formatRelative(iso: string): string {
@@ -65,7 +81,8 @@ onBeforeUnmount(() => {
   <div>
     <div class="page-header">
       <h2>房務清潔</h2>
-      <button @click="load">重新整理</button>
+      <div v-if="errorMessage" class="error-msg">{{ errorMessage }}</div>
+      <button class="btn btn-outline" @click="load">重新整理</button>
     </div>
 
     <section style="margin-bottom: 24px">
@@ -85,7 +102,7 @@ onBeforeUnmount(() => {
             <td>{{ formatRelative(p.requested_at) }}</td>
             <td>{{ p.notes || '-' }}</td>
             <td>
-              <button @click="startCleaning(p.room_number)">啟動清潔</button>
+              <button class="btn btn-primary" @click="startCleaning(p.room_number)">啟動清潔</button>
             </td>
           </tr>
           <tr v-if="pending.length === 0">
@@ -112,7 +129,7 @@ onBeforeUnmount(() => {
             <td>{{ r.cleaning_type === 'checkout' ? '退房清潔' : '每日清潔' }}</td>
             <td>{{ formatRelative(r.started_at) }}</td>
             <td>
-              <button @click="openCompleteModal(r)">完成清潔</button>
+              <button class="btn btn-primary" @click="openCompleteModal(r)">完成清潔</button>
             </td>
           </tr>
           <tr v-if="inProgress.length === 0">
@@ -130,8 +147,8 @@ onBeforeUnmount(() => {
         <label>備註</label>
         <textarea v-model="completeNotes"></textarea>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-          <button @click="completeTarget = null">取消</button>
-          <button @click="submitComplete">送出</button>
+          <button class="btn btn-outline" @click="completeTarget = null">取消</button>
+          <button class="btn btn-primary" @click="submitComplete">送出</button>
         </div>
       </div>
     </div>
