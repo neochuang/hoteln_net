@@ -25,14 +25,14 @@ function logout() {
     <aside class="sidebar">
       <div class="sidebar-title">Grand Hilai</div>
       <nav>
-        <router-link to="/">Dashboard</router-link>
-        <router-link to="/guests">旅客管理</router-link>
-        <router-link to="/rooms">房間管理</router-link>
-        <router-link to="/reservations">訂房管理</router-link>
-        <router-link to="/checkin">報到 / 退房</router-link>
-        <router-link to="/breakfast">早餐管理</router-link>
-        <router-link to="/cleaning">清潔紀錄</router-link>
-        <router-link v-if="auth.isAdmin" to="/users">使用者管理</router-link>
+        <router-link to="/" v-if="auth.canAccessAdminArea">Dashboard</router-link>
+        <router-link to="/guests" v-if="auth.canAccessAdminArea">旅客管理</router-link>
+        <router-link to="/rooms" v-if="auth.canAccessAdminArea">房間管理</router-link>
+        <router-link to="/reservations" v-if="auth.canAccessAdminArea">訂房管理</router-link>
+        <router-link to="/checkin" v-if="auth.canEdit">報到 / 退房</router-link>
+        <router-link to="/breakfast" v-if="auth.canEdit">早餐管理</router-link>
+        <router-link to="/housekeeping" v-if="auth.canAccessHousekeeping">房務清潔</router-link>
+        <router-link to="/users" v-if="auth.isAdmin">使用者管理</router-link>
         <router-link to="/api-keys" v-if="auth.isAdmin">API Key</router-link>
       </nav>
     </aside>
