@@ -1,4 +1,10 @@
-"""Seed script to populate initial data."""
+"""Seed script to populate initial data.
+
+WARNING: This script is intended for local development only. It prints a
+freshly-minted device API key to stdout once at creation time. Do NOT run
+this against any shared, staging, or production database — the output may
+be captured by log collectors or CI job logs.
+"""
 
 import asyncio
 import secrets
@@ -91,7 +97,9 @@ async def seed():
         await session.flush()
 
         # Pick the first room to bind a demo device to
-        first_room = (await session.execute(select(Room).limit(1))).scalar_one_or_none()
+        first_room = (
+            await session.execute(select(Room).order_by(Room.room_number).limit(1))
+        ).scalar_one_or_none()
         if first_room is not None:
             raw = "neo_device_" + secrets.token_hex(8)
             device = ApiKey(
