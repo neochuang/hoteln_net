@@ -16,7 +16,7 @@ async function handleLogin() {
   loading.value = true
   try {
     await auth.login(username.value, password.value)
-    router.push('/')
+    router.push(auth.homeRoute)
   } catch {
     error.value = '帳號或密碼錯誤'
   } finally {
@@ -28,7 +28,7 @@ async function handleLogin() {
 <template>
   <div class="login-page">
     <div class="login-card">
-      <h1>Neo Hotel</h1>
+      <h1>Grand Hilai</h1>
       <p class="subtitle">旅客報到系統</p>
       <div v-if="error" class="error-msg">{{ error }}</div>
       <form @submit.prevent="handleLogin">

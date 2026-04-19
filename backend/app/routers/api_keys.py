@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import require_role
 from app.models.api_key import ApiKey
+from app.models.room import Room
 from app.models.user import User, UserRole
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreatedResponse, ApiKeyResponse, ApiKeyUpdate
 
@@ -17,12 +18,22 @@ router = APIRouter()
 API_KEY_PREFIX = "neo_"
 
 
+async def _assert_room_exists(db: AsyncSession, room_id: uuid.UUID | None) -> None:
+    if room_id is None:
+        return
+    result = await db.execute(select(Room).where(Room.id == room_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=400, detail="Room not found")
+
+
 @router.post("", response_model=ApiKeyCreatedResponse, status_code=status.HTTP_201_CREATED)
 async def create_api_key(
     body: ApiKeyCreate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.admin)),
 ):
+    await _assert_room_exists(db, body.room_id)
+
     raw_key = API_KEY_PREFIX + secrets.token_hex(24)
     key_hash = bcrypt.hashpw(raw_key.encode(), bcrypt.gensalt()).decode()
 
@@ -30,6 +41,7 @@ async def create_api_key(
         key_hash=key_hash,
         key_prefix=raw_key[:8],
         name=body.name,
+        room_id=body.room_id,
     )
     db.add(api_key)
     await db.commit()
@@ -41,6 +53,7 @@ async def create_api_key(
         key_prefix=api_key.key_prefix,
         name=api_key.name,
         is_active=api_key.is_active,
+        room_id=api_key.room_id,
         created_at=api_key.created_at,
         last_used_at=api_key.last_used_at,
     )
@@ -67,7 +80,10 @@ async def update_api_key(
     if api_key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
 
-    for key, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+    if "room_id" in updates:
+        await _assert_room_exists(db, updates["room_id"])
+    for key, value in updates.items():
         setattr(api_key, key, value)
 
     await db.commit()

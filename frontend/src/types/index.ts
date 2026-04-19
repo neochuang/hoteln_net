@@ -2,7 +2,7 @@ export interface User {
   id: string
   username: string
   full_name: string
-  role: 'admin' | 'staff' | 'readonly'
+  role: 'admin' | 'staff' | 'readonly' | 'cleaner'
   is_active: boolean
 }
 
@@ -86,6 +86,7 @@ export interface ApiKey {
   is_active: boolean
   created_at: string
   last_used_at: string | null
+  room_id: string | null
 }
 
 export interface ApiKeyCreated extends ApiKey {
@@ -116,7 +117,7 @@ export interface CleanCompleteResponse {
   room_id: string
   room_number: string
   status: string
-  cleaning_record: CleaningRecord
+  cleaning_record: CleaningRecord | null
 }
 
 export interface CleaningStatusRoom {
@@ -126,4 +127,18 @@ export interface CleaningStatusRoom {
   room_type_name: string
   cleaning_type: 'checkout' | 'daily'
   started_at: string
+}
+
+export interface CleaningRequest {
+  id: string
+  room_id: string
+  room_number: string
+  api_key_id: string
+  notes: string | null
+  status: 'pending' | 'fulfilled' | 'cancelled'
+  requested_at: string
+  fulfilled_at: string | null
+  fulfilled_by_cleaning_record_id: string | null
+  cancelled_at: string | null
+  cancelled_by_user_id: string | null
 }

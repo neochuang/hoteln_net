@@ -1,11 +1,21 @@
-"""Seed script to populate initial data."""
+"""Seed script to populate initial data.
+
+WARNING: This script is intended for local development only. It prints a
+freshly-minted device API key to stdout once at creation time. Do NOT run
+this against any shared, staging, or production database — the output may
+be captured by log collectors or CI job logs.
+"""
 
 import asyncio
+import secrets
 import uuid
 
+import bcrypt
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session, engine, Base
+from app.models.api_key import ApiKey
 from app.models.user import User, UserRole
 from app.models.room import RoomType, Room, RoomStatus
 from app.services.auth import hash_password
@@ -35,6 +45,17 @@ async def seed():
             role=UserRole.staff,
         )
         session.add(staff)
+
+        # Create cleaner user
+        cleaner = User(
+            username="cleaner1",
+            password_hash=hash_password("cleaner1"),
+            full_name="清潔人員一號",
+            role=UserRole.cleaner,
+            is_active=True,
+        )
+        session.add(cleaner)
+        await session.flush()
 
         # Create room types
         room_types = {
@@ -73,11 +94,29 @@ async def seed():
         ]
         for room in rooms:
             session.add(room)
+        await session.flush()
+
+        # Pick the first room to bind a demo device to
+        first_room = (
+            await session.execute(select(Room).order_by(Room.room_number).limit(1))
+        ).scalar_one_or_none()
+        if first_room is not None:
+            raw = "neo_device_" + secrets.token_hex(8)
+            device = ApiKey(
+                key_hash=bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode(),
+                key_prefix=raw[:8],
+                name=f"Room {first_room.room_number} tablet",
+                is_active=True,
+                room_id=first_room.id,
+            )
+            session.add(device)
+            print(f"[seed] Room-bound device API key for room {first_room.room_number}: {raw}")
 
         await session.commit()
         print("Seed data created successfully!")
         print(f"  Admin: admin / admin123")
         print(f"  Staff: staff / staff123")
+        print(f"  Cleaner: cleaner1 / cleaner1")
         print(f"  Room types: {len(room_types)}")
         print(f"  Rooms: {len(rooms)}")
 

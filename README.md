@@ -1,4 +1,4 @@
-# Neo Hotel Check-in System
+# Grand Hilai Check-in System
 
 飯店入住管理系統，提供旅客管理、房間管理、訂房、報到/退房、早餐管理、房務清潔通報等功能。
 
@@ -134,6 +134,9 @@ Frontend 預設跑在 http://localhost:5173
 |------|------|------|------|
 | Admin | `admin` | `admin123` | 系統管理員，完整權限 |
 | Staff | `staff` | `staff123` | 前台人員，日常操作權限 |
+| Cleaner | `cleaner1` | `cleaner1` | 清潔人員，僅能存取房務清潔頁面 |
+
+> 種子資料另會建立一組綁定首個房間（201）的裝置 API Key，並將完整 key 印到 stdout。此 key 僅供本機開發使用，請勿在共用環境執行 seed。
 
 ## 預設房型與房間
 
@@ -196,8 +199,8 @@ neo/
 | `/` | Check-in/out | 報到與退房操作 |
 | `/breakfast` | Breakfast | 早餐紀錄管理 |
 | `/self-checkin` | Self Check-in | 旅客自助報到 (public, 無需認證) |
-| `/housekeeping` | Housekeeping | 房務清潔通報 (支援 API Key 認證) |
-| `/api-keys` | API Keys | 外部裝置 API Key 管理 (admin only) |
+| `/housekeeping` | Housekeeping | 房務清潔通報、旅客清潔請求 (支援 API Key 與 cleaner 角色) |
+| `/api-keys` | API Keys | 外部裝置 API Key 管理，可綁定房間 (admin only) |
 
 完整 API 文件請參考 Swagger UI: http://localhost:8000/docs
 
@@ -210,19 +213,22 @@ neo/
 | `/guests` | GuestsView | auth |
 | `/rooms` | RoomsView | auth |
 | `/reservations` | ReservationsView | auth |
-| `/checkin` | CheckInView | auth |
-| `/breakfast` | BreakfastView | auth |
-| `/cleaning` | CleaningView | auth |
+| `/checkin` | CheckInView | admin, staff |
+| `/breakfast` | BreakfastView | admin, staff |
+| `/housekeeping` | HousekeepingView | admin, staff, cleaner |
 | `/users` | UsersView | admin only |
 | `/api-keys` | ApiKeysView | admin only |
 | `/self-checkin` | SelfCheckInView | public |
+
+> `cleaner` 角色登入後會自動導向 `/housekeeping`，側邊欄只顯示房務頁面；`/cleaning` 會重導到 `/housekeeping`（舊路徑相容）。
 
 ## 認證系統
 
 - JWT access token (30 分鐘) + refresh token (7 天)
 - Frontend 使用 Axios interceptor 自動 refresh token
-- 角色：`admin`（完整權限）、`staff`（日常操作）、`readonly`（唯讀）
-- 外部裝置透過 `X-API-Key` header 認證（API Key 由 admin 在系統中建立管理）
+- 角色：`admin`（完整權限）、`staff`（日常操作）、`cleaner`（僅限房務清潔）、`readonly`（唯讀）
+- 外部裝置透過 `X-API-Key` header 認證（API Key 由 admin 建立，可選擇綁定到特定房間）
+- 綁定房間的 API Key 可代表該房間旅客送出清潔請求（`POST /api/housekeeping/cleaning-requests`）
 
 ## 房間狀態流程
 
@@ -278,10 +284,12 @@ curl -X POST http://localhost:8000/api/self-checkin/confirm \
 curl -X POST http://localhost:8000/api/api-keys \
   -H "Authorization: Bearer <admin_access_token>" \
   -H "Content-Type: application/json" \
-  -d '{"name": "3F 清潔平板"}'
+  -d '{"name": "301 房客房裝置", "room_id": "<房間 UUID>"}'
 ```
 
-回傳的 `key` 欄位即為完整 API Key（僅顯示一次，格式如 `neo_xxxxxxxx...`）。
+- `room_id` 為選填：綁定房間後，該裝置才能代表房間旅客送出清潔請求
+- 回傳的 `key` 欄位即為完整 API Key（僅顯示一次，格式如 `neo_xxxxxxxx...`）
+- 可用 `PATCH /api/api-keys/{id}` 更新 `room_id`（或設為 `null` 解除綁定）
 
 ### 查詢待清潔房間
 
@@ -304,12 +312,55 @@ curl -X POST http://localhost:8000/api/housekeeping/rooms/301/clean-complete \
 
 ### 前台標註房間可清潔
 
-前台人員將連住房客外出的房間標註為可清潔（需 JWT 認證）：
+前台人員將連住房客外出的房間標註為可清潔（需 JWT 認證，`admin` / `staff` / `cleaner` 皆可）：
 
 ```bash
 curl -X POST http://localhost:8000/api/housekeeping/rooms/301/mark-cleaning \
   -H "Authorization: Bearer <access_token>"
 ```
+
+若該房間已有 `pending` 清潔請求，此操作會在同一個 transaction 內將請求標為 `fulfilled` 並連結到剛建立的清潔紀錄。
+
+## 旅客清潔請求 API
+
+房間內的裝置（綁定房間的 API Key）可代表旅客送出「請來打掃」的請求。請求在清潔完成（mark-cleaning）時會自動標為已處理。
+
+### 送出清潔請求（裝置端）
+
+```bash
+curl -X POST http://localhost:8000/api/housekeeping/cleaning-requests \
+  -H "X-API-Key: neo_xxxxxxxx..." \
+  -H "Content-Type: application/json" \
+  -d '{"notes": "希望補充礦泉水"}'
+```
+
+- 需使用已綁定房間的裝置 API Key；該房間必須為 `occupied` 狀態
+- 同一房間在同一時間只能有一筆 `pending` 請求（partial unique index）；重複呼叫會回傳既有的 pending 請求（idempotent）
+- `notes` 為選填
+
+### 查詢清潔請求（前台 / 清潔人員）
+
+```bash
+# 預設列出所有 pending 請求
+curl "http://localhost:8000/api/housekeeping/cleaning-requests" \
+  -H "Authorization: Bearer <access_token>"
+
+# 可用 status 過濾：pending / fulfilled / cancelled / all
+curl "http://localhost:8000/api/housekeeping/cleaning-requests?status=all&room_id=<UUID>" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+可由 `admin`、`staff`、`cleaner` 角色呼叫。
+
+### 取消清潔請求（前台）
+
+```bash
+curl -X POST http://localhost:8000/api/housekeeping/cleaning-requests/<request_id>/cancel \
+  -H "Authorization: Bearer <access_token>"
+```
+
+- 僅 `admin` / `staff` 可取消
+- 非 `pending` 狀態會回 `409 Conflict`
 
 ## 環境變數
 

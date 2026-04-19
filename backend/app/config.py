@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
     jwt_algorithm: str = "HS256"
-    wifi_password: str = "NeoHotel2026"
+    wifi_password: str = "GrandHilai2026"
     breakfast_info: str = "早餐時間 07:00-10:00，地點：1F 餐廳"
 
     model_config = {"env_file": ".env", "extra": "ignore"}

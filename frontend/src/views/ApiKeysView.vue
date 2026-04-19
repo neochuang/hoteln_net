@@ -1,38 +1,73 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '../api/client'
-import type { ApiKey, ApiKeyCreated } from '../types'
+import type { ApiKey, ApiKeyCreated, Room } from '../types'
 
 const apiKeys = ref<ApiKey[]>([])
+const rooms = ref<Room[]>([])
 const showCreateModal = ref(false)
+const showEditModal = ref(false)
 const showKeyModal = ref(false)
-const newKeyName = ref('')
 const createdKey = ref('')
+const editingId = ref<string | null>(null)
 
-async function loadKeys() {
-  const res = await api.get('/api-keys')
-  apiKeys.value = res.data
+const form = ref<{ name: string; room_id: string | null }>({ name: '', room_id: null })
+
+async function loadData() {
+  const [keysRes, roomsRes] = await Promise.all([
+    api.get('/api-keys'),
+    api.get('/rooms'),
+  ])
+  apiKeys.value = keysRes.data
+  rooms.value = roomsRes.data
+}
+
+function resetForm() {
+  form.value = { name: '', room_id: null }
+  editingId.value = null
+}
+
+function openCreate() {
+  resetForm()
+  showCreateModal.value = true
+}
+
+function openEdit(key: ApiKey) {
+  editingId.value = key.id
+  form.value = { name: key.name, room_id: key.room_id }
+  showEditModal.value = true
 }
 
 async function createKey() {
-  const res = await api.post('/api-keys', { name: newKeyName.value })
+  const res = await api.post('/api-keys', { name: form.value.name, room_id: form.value.room_id })
   const data: ApiKeyCreated = res.data
   createdKey.value = data.key
   showCreateModal.value = false
-  newKeyName.value = ''
+  resetForm()
   showKeyModal.value = true
-  await loadKeys()
+  await loadData()
+}
+
+async function updateKey() {
+  if (!editingId.value) return
+  await api.patch(`/api-keys/${editingId.value}`, {
+    name: form.value.name,
+    room_id: form.value.room_id,
+  })
+  showEditModal.value = false
+  resetForm()
+  await loadData()
 }
 
 async function toggleActive(key: ApiKey) {
   await api.patch(`/api-keys/${key.id}`, { is_active: !key.is_active })
-  await loadKeys()
+  await loadData()
 }
 
 async function deleteKey(key: ApiKey) {
   if (!confirm(`確定要刪除「${key.name}」？`)) return
   await api.delete(`/api-keys/${key.id}`)
-  await loadKeys()
+  await loadData()
 }
 
 function copyKey() {
@@ -44,14 +79,19 @@ function formatDate(d: string | null) {
   return new Date(d).toLocaleString('zh-TW')
 }
 
-onMounted(loadKeys)
+function roomLabel(roomId: string | null) {
+  if (!roomId) return '-'
+  return rooms.value.find(r => r.id === roomId)?.room_number || '-'
+}
+
+onMounted(loadData)
 </script>
 
 <template>
   <div>
     <div class="page-header">
       <h2>API Key 管理</h2>
-      <button class="btn btn-primary" @click="showCreateModal = true">新增 API Key</button>
+      <button class="btn btn-primary" @click="openCreate">新增 API Key</button>
     </div>
 
     <table>
@@ -59,6 +99,7 @@ onMounted(loadKeys)
         <tr>
           <th>名稱</th>
           <th>Key 前綴</th>
+          <th>綁定房間</th>
           <th>狀態</th>
           <th>建立時間</th>
           <th>最後使用</th>
@@ -69,6 +110,7 @@ onMounted(loadKeys)
         <tr v-for="key in apiKeys" :key="key.id">
           <td>{{ key.name }}</td>
           <td><code>{{ key.key_prefix }}...</code></td>
+          <td>{{ roomLabel(key.room_id) }}</td>
           <td>
             <span :class="['badge', key.is_active ? 'badge-available' : 'badge-cancelled']">
               {{ key.is_active ? '啟用' : '停用' }}
@@ -77,8 +119,12 @@ onMounted(loadKeys)
           <td>{{ formatDate(key.created_at) }}</td>
           <td>{{ formatDate(key.last_used_at) }}</td>
           <td>
+            <button class="btn btn-sm" @click="openEdit(key)">
+              編輯
+            </button>
             <button
               :class="['btn btn-sm', key.is_active ? 'btn-danger' : 'btn-success']"
+              style="margin-left: 4px"
               @click="toggleActive(key)"
             >
               {{ key.is_active ? '停用' : '啟用' }}
@@ -89,7 +135,7 @@ onMounted(loadKeys)
           </td>
         </tr>
         <tr v-if="apiKeys.length === 0">
-          <td colspan="6" style="text-align: center; color: #888">尚無 API Key</td>
+          <td colspan="7" style="text-align: center; color: #888">尚無 API Key</td>
         </tr>
       </tbody>
     </table>
@@ -103,11 +149,44 @@ onMounted(loadKeys)
         <form @submit.prevent="createKey">
           <div class="form-group">
             <label>裝置名稱</label>
-            <input v-model="newKeyName" required placeholder="例如：3F 清潔平板" />
+            <input v-model="form.name" required placeholder="例如：3F 清潔平板" />
+          </div>
+          <div class="form-group">
+            <label>綁定房間 (可留空)</label>
+            <select v-model="form.room_id">
+              <option :value="null">未綁定</option>
+              <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.room_number }}</option>
+            </select>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn" @click="showCreateModal = false">取消</button>
             <button type="submit" class="btn btn-primary">建立</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div v-if="showEditModal" class="overlay" @click.self="showEditModal = false">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>編輯 API Key</h3>
+        </div>
+        <form @submit.prevent="updateKey">
+          <div class="form-group">
+            <label>裝置名稱</label>
+            <input v-model="form.name" required />
+          </div>
+          <div class="form-group">
+            <label>綁定房間 (可留空)</label>
+            <select v-model="form.room_id">
+              <option :value="null">未綁定</option>
+              <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.room_number }}</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn" @click="showEditModal = false">取消</button>
+            <button type="submit" class="btn btn-primary">儲存</button>
           </div>
         </form>
       </div>
