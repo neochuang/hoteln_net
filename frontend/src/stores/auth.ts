@@ -8,6 +8,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
   const canEdit = computed(() => user.value?.role === 'admin' || user.value?.role === 'staff')
+  const isCleaner = computed(() => user.value?.role === 'cleaner')
+  const canAccessHousekeeping = computed(
+    () => user.value?.role === 'admin' || user.value?.role === 'staff' || user.value?.role === 'cleaner'
+  )
+  const canAccessAdminArea = computed(
+    () => user.value?.role === 'admin' || user.value?.role === 'staff'
+  )
 
   async function login(username: string, password: string) {
     const res = await api.post('/auth/login', { username, password })
@@ -37,5 +44,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, isLoggedIn, isAdmin, canEdit, login, fetchUser, logout, init }
+  return {
+    user,
+    isLoggedIn,
+    isAdmin,
+    canEdit,
+    isCleaner,
+    canAccessHousekeeping,
+    canAccessAdminArea,
+    login,
+    fetchUser,
+    logout,
+    init,
+  }
 })
