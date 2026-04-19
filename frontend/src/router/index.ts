@@ -32,10 +32,10 @@ router.beforeEach(async (to) => {
     return '/login'
   }
   if (meta.adminOnly && !auth.isAdmin) {
-    return auth.isCleaner ? '/housekeeping' : '/'
+    return auth.homeRoute
   }
   if (meta.roles && auth.user && !meta.roles.includes(auth.user.role)) {
-    return auth.isCleaner ? '/housekeeping' : '/'
+    return auth.homeRoute
   }
 })
 

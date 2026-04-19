@@ -15,6 +15,7 @@ export const useAuthStore = defineStore('auth', () => {
   const canAccessAdminArea = computed(
     () => user.value?.role === 'admin' || user.value?.role === 'staff'
   )
+  const homeRoute = computed(() => (user.value?.role === 'cleaner' ? '/housekeeping' : '/'))
 
   async function login(username: string, password: string) {
     const res = await api.post('/auth/login', { username, password })
@@ -52,6 +53,7 @@ export const useAuthStore = defineStore('auth', () => {
     isCleaner,
     canAccessHousekeeping,
     canAccessAdminArea,
+    homeRoute,
     login,
     fetchUser,
     logout,

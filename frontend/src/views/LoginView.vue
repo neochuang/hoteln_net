@@ -16,8 +16,7 @@ async function handleLogin() {
   loading.value = true
   try {
     await auth.login(username.value, password.value)
-    const target = auth.isCleaner ? '/housekeeping' : '/'
-    router.push(target)
+    router.push(auth.homeRoute)
   } catch {
     error.value = '帳號或密碼錯誤'
   } finally {
