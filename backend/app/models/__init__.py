@@ -6,6 +6,7 @@ from app.models.checkin import CheckInRecord
 from app.models.breakfast import BreakfastRecord
 from app.models.api_key import ApiKey
 from app.models.cleaning import CleaningRecord
+from app.models.cleaning_task import CleaningTask
 
 __all__ = [
     "User",
@@ -17,4 +18,5 @@ __all__ = [
     "BreakfastRecord",
     "ApiKey",
     "CleaningRecord",
+    "CleaningTask",
 ]

@@ -38,3 +38,4 @@ class Room(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     room_type = relationship("RoomType", back_populates="rooms")
+    cleaning_tasks = relationship("CleaningTask", back_populates="room")
