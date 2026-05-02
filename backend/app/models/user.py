@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -26,3 +26,14 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.staff)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    assigned_tasks = relationship(
+        "CleaningTask",
+        foreign_keys="[CleaningTask.assigned_to_user_id]",
+        back_populates="assigned_to"
+    )
+    created_tasks = relationship(
+        "CleaningTask",
+        foreign_keys="[CleaningTask.assigned_by_user_id]",
+        back_populates="assigned_by"
+    )

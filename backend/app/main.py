@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import api_keys, auth, breakfast, checkins, guests, housekeeping, reservations, rooms, self_checkin, users
+from app.routers import api_keys, auth, breakfast, checkins, cleaning_tasks, guests, housekeeping, reservations, rooms, self_checkin, users
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.include_router(breakfast.router, prefix="/api/breakfast", tags=["Breakfast"]
 app.include_router(self_checkin.router, prefix="/api/self-checkin", tags=["Self Check-in"])
 app.include_router(api_keys.router, prefix="/api/api-keys", tags=["API Keys"])
 app.include_router(housekeeping.router, prefix="/api/housekeeping", tags=["Housekeeping"])
+app.include_router(cleaning_tasks.router, prefix="/api/housekeeping", tags=["Housekeeping Tasks"])
 
 
 @app.get("/api/health")

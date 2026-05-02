@@ -142,3 +142,18 @@ export interface CleaningRequest {
   cancelled_at: string | null
   cancelled_by_user_id: string | null
 }
+
+export type CleaningTaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
+
+export interface CleaningTask {
+  id: string
+  room_id: string
+  assigned_to_user_id: string
+  assigned_by_user_id: string
+  status: CleaningTaskStatus
+  cleaning_type: string
+  created_at: string
+  updated_at: string
+  room_number?: string
+  cleaner_name?: string
+}

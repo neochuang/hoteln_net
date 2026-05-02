@@ -19,6 +19,7 @@ const router = createRouter({
     { path: '/breakfast', name: 'Breakfast', component: () => import('../views/BreakfastView.vue'), meta: { roles: ['admin', 'staff'] } as RouteMeta },
     { path: '/users', name: 'Users', component: () => import('../views/UsersView.vue'), meta: { adminOnly: true } as RouteMeta },
     { path: '/housekeeping', name: 'Housekeeping', component: () => import('../views/HousekeepingView.vue'), meta: { roles: ['admin', 'staff', 'cleaner'] } as RouteMeta },
+    { path: '/cleaner-tasks', name: 'CleanerTasks', component: () => import('../views/CleanerTasksView.vue'), meta: { roles: ['cleaner'] } as RouteMeta },
     { path: '/cleaning', redirect: '/housekeeping' },
     { path: '/api-keys', name: 'ApiKeys', component: () => import('../views/ApiKeysView.vue'), meta: { adminOnly: true } as RouteMeta },
     { path: '/self-checkin', name: 'SelfCheckIn', component: () => import('../views/SelfCheckInView.vue'), meta: { public: true } as RouteMeta },
