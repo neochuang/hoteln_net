@@ -1,138 +1,65 @@
-# Grand Hilai Check-in System
+# Grand Hilai Check-in System - CLAUDE.md
 
-## Project Overview
+## Build & Run Commands
+### Docker (Recommended)
+- `docker compose up -d`: Start all services (PostgreSQL, Backend, Frontend)
+- `docker compose up -d --build`: Rebuild and start
+- `docker compose exec backend alembic upgrade head`: Run DB migrations
+- `docker compose exec backend python -m app.seed`: Seed initial data (Local Dev Only)
 
-飯店入住管理系統，提供旅客管理、房間管理、訂房、報到/退房、早餐管理等功能。
+### Local Development
+- **Backend**:
+  - `cd backend && python -m venv .venv && source .venv/bin/activate`
+  - `pip install -e ".[dev]"`
+  - `alembic upgrade head`
+  - `python -m app.seed` (Warning: See script notes)
+  - `uvicorn app.main:app --reload`
+- **Frontend**:
+  - `cd frontend && npm install`
+  - `npm run dev`
 
-## Tech Stack
+## Test Commands
+- **Backend**: `cd backend && pytest`
+- **Frontend**: `cd frontend && npm run build` (Type checking via `vue-tsc`)
 
-- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 (async), Alembic, Pydantic v2
-- **Frontend**: Vue 3 (Composition API + `<script setup>`), TypeScript, Vite, Pinia, Vue Router, Axios
-- **Database**: PostgreSQL 15 (asyncpg driver)
-- **Auth**: JWT (access + refresh token), bcrypt, HTTPBearer
-- **Infra**: Docker Compose (db / backend / frontend)
-
-## Project Structure
-
-```
-neo/
-├── backend/
-│   ├── app/
-│   │   ├── main.py            # FastAPI app, CORS, router registration
-│   │   ├── config.py          # pydantic-settings (env-based config)
-│   │   ├── database.py        # async engine, session, Base
-│   │   ├── dependencies.py    # get_current_user, require_role
-│   │   ├── seed.py            # DB seed script
-│   │   ├── models/            # SQLAlchemy ORM models
-│   │   ├── schemas/           # Pydantic request/response schemas
-│   │   ├── routers/           # API route handlers
-│   │   ├── services/          # Business logic (auth service)
-│   │   └── utils/
-│   ├── tests/                 # pytest-asyncio tests
-│   ├── alembic.ini
-│   ├── pyproject.toml
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   │   ├── App.vue            # Layout: sidebar + topbar + router-view
-│   │   ├── main.ts            # App entry point
-│   │   ├── api/client.ts      # Axios instance with JWT interceptor + auto-refresh
-│   │   ├── stores/auth.ts     # Pinia auth store (login, logout, init)
-│   │   ├── router/index.ts    # Vue Router with auth guards
-│   │   ├── types/index.ts     # TypeScript type definitions
-│   │   └── views/             # Page components
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── Dockerfile
-├── docker-compose.yml
-├── .env / .env.example
-└── docs/
-```
-
-## Data Models
-
-- **User** — 系統使用者 (admin / staff / readonly)
-- **Guest** — 旅客 (姓名、證件、國籍、聯絡方式)
-- **RoomType** — 房型 (名稱、容量、基本價格)
-- **Room** — 房間 (房號、樓層、狀態: available/occupied/cleaning/maintenance)
-- **Reservation** — 訂房 (關聯 Guest + RoomType + Room, 日期、人數、含早餐、總價、狀態)
-- **CheckInRecord** — 入住紀錄 (關聯 Reservation + Room, 入住/退房時間及操作者)
-- **BreakfastRecord** — 早餐紀錄 (關聯 Reservation + Guest, 日期、額外購買)
-
-## API Routes
-
-All endpoints are prefixed with `/api`:
-
-| Prefix             | Tag              | Description  |
-|--------------------|------------------|-------------|
-| `/auth`            | Auth             | 登入、refresh token、取得當前使用者 |
-| `/users`           | Users            | 使用者 CRUD (admin only) |
-| `/guests`          | Guests           | 旅客 CRUD |
-| `/rooms`           | Rooms            | 房間與房型管理 |
-| `/reservations`    | Reservations     | 訂房 CRUD |
-| `/`                | Check-in/out     | 報到與退房操作 |
-| `/breakfast`       | Breakfast        | 早餐紀錄管理 |
-| `/self-checkin`    | Self Check-in    | 旅客自助報到 (public) |
-
-## Frontend Pages
-
-| Route            | Component            | Access     |
-|------------------|----------------------|------------|
-| `/login`         | LoginView            | public     |
-| `/`              | DashboardView        | auth       |
-| `/guests`        | GuestsView           | auth       |
-| `/rooms`         | RoomsView            | auth       |
-| `/reservations`  | ReservationsView     | auth       |
-| `/checkin`       | CheckInView          | auth       |
-| `/breakfast`     | BreakfastView        | auth       |
-| `/users`         | UsersView            | admin only |
-| `/self-checkin`  | SelfCheckInView      | public     |
-
-## Auth System
-
-- JWT access token (30 min) + refresh token (7 days)
-- Frontend 使用 Axios interceptor 自動 refresh token
-- Role-based access: `admin`, `staff`, `readonly`
-- Backend 透過 `get_current_user` 和 `require_role()` dependency 實現權限控制
-
-## Development Commands
-
-```bash
-# Docker 啟動全部服務
-docker compose up -d
-
-# Backend 本地開發
-cd backend
-pip install -e ".[dev]"
-uvicorn app.main:app --reload
-
-# Frontend 本地開發
-cd frontend
-npm install
-npm run dev
-
-# 執行測試
-cd backend
-pytest
-
-# Frontend build
-cd frontend
-npm run build
-```
+## Core Endpoints
+- **Health Check**: `GET /api/health`
+- **API Docs**: `GET /docs` (Swagger UI)
 
 ## Environment Variables
+- `DATABASE_URL`: SQLAlchemy-compatible database URI (e.g., `postgresql+asyncpg://...`)
+- `JWT_SECRET`: Secret key for signing tokens
+- `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`: Access token TTL
+- `JWT_REFRESH_TOKEN_EXPIRE_DAYS`: Refresh token TTL
 
-參考 `.env.example`:
-- `DATABASE_URL` — PostgreSQL 連線字串
-- `JWT_SECRET` — JWT 簽署金鑰
-- `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` — Access token 過期時間
-- `JWT_REFRESH_TOKEN_EXPIRE_DAYS` — Refresh token 過期時間
+## Coding Standards & Conventions
+### Backend (FastAPI + SQLAlchemy 2.0)
+- **Async Everything**: Use `async def` for routes and `await` for DB operations.
+- **SQLAlchemy 2.0**: Use `Mapped` and `mapped_column` type hints.
+- **Pydantic v2**: Use Pydantic models for request/response validation.
+- **UUID**: All primary keys must be `UUID` (using `uuid4`).
+- **Dependency Injection**: Use `Depends(get_db)` for database sessions.
+- **Auth**: Use `Depends(get_current_user)` or `Depends(require_role(...))`.
+- **Migrations**: Always use Alembic for schema changes.
+- **Lifespan**: Use the `lifespan` context manager in `app/main.py` for startup/shutdown logic.
 
-## Conventions
+### Frontend (Vue 3 + TypeScript)
+- **Composition API**: Use `<script setup>` syntax.
+- **State Management**: Use Pinia (`stores/`).
+- **API Client**: Use the shared axios client in `src/api/client.ts`.
+- **Typing**: Define TypeScript interfaces in `src/types/index.ts`.
+- **Auth Guard**: Protected routes should have `meta: { roles: [...] }` or `meta: { adminOnly: true }`.
 
-- Backend 使用 async/await 全非同步架構
-- Models 使用 SQLAlchemy 2.0 Mapped Column 語法
-- 所有 primary key 使用 UUID
-- Frontend 使用 Vue 3 Composition API (`<script setup>`)
-- 前端狀態管理使用 Pinia
-- API client 統一透過 `src/api/client.ts` 發送請求
+## Project Structure
+- `backend/app/models/`: SQLAlchemy ORM models.
+- `backend/app/schemas/`: Pydantic schemas.
+- `backend/app/routers/`: FastAPI route handlers.
+- `frontend/src/views/`: Page components.
+- `frontend/src/components/`: Reusable UI components.
+- `frontend/src/stores/`: Pinia store definitions.
+
+## Key Data Models
+- **User Roles**: `admin`, `staff`, `cleaner`, `readonly`.
+- **Room Status**: `available`, `occupied`, `cleaning`, `maintenance`.
+- **APIKey**: Device-based authentication (tablet-in-room) for self-checkin.
+- **CleaningRequest**: Guest-initiated requests tracked via `cleaning_requests` table.
